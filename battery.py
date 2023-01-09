@@ -586,7 +586,7 @@ def main():
             hour = datetime.datetime.now().hour
             time.sleep(60)                      # Wait one minute to make sure we are well beyond hour boundery
 
-            if hour == 0:
+            if hour == 0 and vector_tomorrow:
                 vector=vector_tomorrow.copy()
                 vector_tomorrow = []
                 if empty(vector) :
