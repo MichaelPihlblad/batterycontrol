@@ -234,9 +234,9 @@ def buildOptimizedChargeCntrlVector(data,logger):
         value = msegmentvalue
         returnvector = vector
     if value > 0 :
-        return returnvector
-    else :
-        return ['0']*24
+        return returnvector, float(value)
+    else :        
+        return ['0']*24, 0.0
 
 
 #
@@ -538,12 +538,14 @@ def main():
     battery_mode=batteryChargeCntrl.getState()
     bLogger.info("Current battery mode: "+battery_mode)
 
+    profit_today = 0.0
+    profit_tomorrow = 0.0
     pdata=json.loads(getPrices(bLogger).text)             # get prices
-    vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
+    vector, profit_today = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
     if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 and not TEST:
         a=1
-        vector_tomorrow =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
+        vector_tomorrow, profit_tomorrow =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
         if len(vector_tomorrow) > 0 and vector_tomorrow[NOCHARGEHOUR] == 'L': vector_tomorrow[NOCHARGEHOUR] = '0'
     else :
         vector_tomorrow = []
@@ -588,7 +590,9 @@ def main():
 
             if hour == 0 and vector_tomorrow:
                 vector=vector_tomorrow.copy()
+                profit_today = float(profit_tomorrow)
                 vector_tomorrow = []
+                profit_tomorrow = 0.0
                 if empty(vector) :
                     bLogger.info("Price curve segment. Activate maximize self-consumption mode ")
                     batteryChargeCntrl.setState('Selfconsumption', dict(Today=vector, Tomorrow=vector_tomorrow))
@@ -604,7 +608,7 @@ def main():
             if hour >= 15 and not vector_tomorrow:
                 pdata=json.loads(getPrices(bLogger).text)             # get new prices
                 bLogger.info("Fetched next days prices, analyzing....")
-                vector_tomorrow = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
+                vector_tomorrow, profit_tomorrow = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
                 if len(vector_tomorrow) != 0 :
                     if vector_tomorrow[NOCHARGEHOUR] == 'L' : vector_tomorrow[NOCHARGEHOUR] = '0'
                     bLogger.info(f"Next days vector: " )
@@ -616,13 +620,13 @@ def main():
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if len(vector) != 0:
                 if vector[hour] == '0' :
-                    batteryChargeCntrl.setState('Idle', dict(Today=vector, Tomorrow=vector_tomorrow))
+                    batteryChargeCntrl.setState('Idle', dict(Today=vector, Tomorrow=vector_tomorrow, Profit_today=profit_today, Profit_tomorrow=profit_tomorrow))
                     bLogger.info("Battery mode set to Idle")
                 elif vector[hour] == 'L':
-                    batteryChargeCntrl.setState('Charge', dict(Today=vector, Tomorrow=vector_tomorrow))
+                    batteryChargeCntrl.setState('Charge', dict(Today=vector, Tomorrow=vector_tomorrow, Profit_today=profit_today, Profit_tomorrow=profit_tomorrow))
                     bLogger.info("Battery mode set to Charge")
                 else:
-                    batteryChargeCntrl.setState('Discharge', dict(Today=vector, Tomorrow=vector_tomorrow))
+                    batteryChargeCntrl.setState('Discharge', dict(Today=vector, Tomorrow=vector_tomorrow, Profit_today=profit_today, Profit_tomorrow=profit_tomorrow))
                     bLogger.info("Battery mode set to Discharge")
             else :
                 bLogger.info("No high price segments. Apply maximize self-consumptio")
